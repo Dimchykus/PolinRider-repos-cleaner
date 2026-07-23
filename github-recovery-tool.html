@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Incident Recovery Tool</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-card-hover: #1c2128;
+    --bg-input: #0d1117;
+    --border: #30363d;
+    --border-focus: #388bfd;
+    --text: #e6edf3;
+    --text-muted: #7d8590;
+    --text-dim: #484f58;
+    --accent: #388bfd;
+    --accent-hover: #58a6ff;
+    --danger: #f85149;
+    --danger-bg: rgba(248,81,73,0.1);
+    --warning: #d29922;
+    --warning-bg: rgba(210,153,34,0.1);
+    --success: #3fb950;
+    --success-bg: rgba(63,185,80,0.1);
+    --pill-bg: #21262d;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --radius: 6px;
+    --radius-lg: 10px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    background: rgba(13,17,23,0.95);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+  }
+  .header-icon {
+    width: 32px; height: 32px;
+    background: var(--danger-bg);
+    border: 1px solid rgba(248,81,73,0.3);
+    border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .header-title { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
+  .header-sub { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+  .header-badge {
+    margin-left: auto;
+    font-size: 11px;
+    font-family: var(--mono);
+    background: var(--warning-bg);
+    border: 1px solid rgba(210,153,34,0.3);
+    color: var(--warning);
+    padding: 3px 9px;
+    border-radius: 20px;
+    letter-spacing: 0.3px;
+  }
+
+  /* ── LAYOUT ── */
+  .app { display: flex; height: calc(100vh - 60px); }
+
+  .sidebar {
+    width: 340px;
+    min-width: 340px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+
+  /* ── SIDEBAR SECTIONS ── */
+  .sidebar-section {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-section:last-child { border-bottom: none; flex: 1; overflow-y: auto; }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  /* ── FORM ELEMENTS ── */
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+    font-weight: 500;
+  }
+  .field input {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--border-focus); }
+  .field input::placeholder { color: var(--text-dim); }
+
+  .token-wrap { position: relative; }
+  .token-wrap input { padding-right: 36px; }
+  .token-eye {
+    position: absolute;
+    right: 10px; top: 50%;
+    transform: translateY(-50%);
+    background: none; border: none;
+    color: var(--text-muted); cursor: pointer;
+    font-size: 14px; padding: 2px;
+    line-height: 1;
+  }
+  .token-eye:hover { color: var(--text); }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { background: #21262d; color: var(--text-muted); cursor: not-allowed; }
+
+  .btn-danger {
+    background: rgba(248,81,73,0.15);
+    color: var(--danger);
+    border: 1px solid rgba(248,81,73,0.3);
+  }
+  .btn-danger:hover { background: rgba(248,81,73,0.25); }
+
+  .btn-ghost {
+    background: var(--pill-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { background: var(--bg-card-hover); border-color: var(--text-muted); }
+
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── BRANCH FILTER ── */
+  .branch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .branch-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.12s;
+  }
+  .branch-item:hover { background: var(--bg-card-hover); }
+  .branch-item.active {
+    background: rgba(56,139,253,0.1);
+    border-color: rgba(56,139,253,0.3);
+  }
+  .branch-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .branch-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .branch-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--pill-bg);
+    padding: 1px 6px;
+    border-radius: 10px;
+  }
+
+  /* ── STATUS BAR ── */
+  .status-bar {
+    padding: 10px 20px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+  }
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .status-dot.ok { background: var(--success); }
+  .status-dot.err { background: var(--danger); }
+  .status-dot.loading { background: var(--warning); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* ── MAIN CONTENT ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .empty-icon { font-size: 36px; opacity: 0.3; }
+  .empty-title { font-size: 16px; font-weight: 500; color: var(--text); }
+  .empty-sub { font-size: 13px; max-width: 280px; }
+
+  .events-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .events-count {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .events-count strong { color: var(--text); }
+
+  /* ── EVENT CARD ── */
+  .event-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 12px;
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+  .event-card:hover { border-color: #484f58; }
+  .event-card.expanded { border-color: rgba(56,139,253,0.4); }
+
+  .event-card-header {
+    padding: 14px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .event-severity {
+    width: 32px; height: 32px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .sev-high { background: var(--danger-bg); border: 1px solid rgba(248,81,73,0.3); }
+  .sev-med  { background: var(--warning-bg); border: 1px solid rgba(210,153,34,0.3); }
+  .sev-low  { background: var(--success-bg); border: 1px solid rgba(63,185,80,0.3); }
+
+  .event-meta { flex: 1; min-width: 0; }
+  .event-branch {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-hover);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .event-branch-icon { font-size: 12px; opacity: 0.7; }
+  .event-actor {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .actor-avatar {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+  }
+  .event-time {
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    text-align: right;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .event-time .ago { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+  .event-time .abs { display: block; font-size: 10px; font-family: var(--mono); }
+
+  .chevron {
+    font-size: 12px;
+    color: var(--text-dim);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .expanded .chevron { transform: rotate(90deg); }
+
+  /* ── EVENT DETAIL ── */
+  .event-detail {
+    display: none;
+    border-top: 1px solid var(--border);
+    padding: 16px;
+  }
+  .event-card.expanded .event-detail { display: block; }
+
+  .commit-compare {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .commit-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+  .commit-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .commit-label.before { color: var(--success); }
+  .commit-label.after  { color: var(--danger); }
+  .commit-sha {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    word-break: break-all;
+  }
+  .commit-sha.clickable {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    color: var(--accent-hover);
+  }
+  .arrow-icon { font-size: 18px; color: var(--text-dim); text-align: center; }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .detail-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+  }
+  .detail-key {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 3px;
+    font-weight: 600;
+  }
+  .detail-val {
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--text);
+    word-break: break-all;
+  }
+
+  .warning-box {
+    background: var(--warning-bg);
+    border: 1px solid rgba(210,153,34,0.3);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--warning);
+    margin-bottom: 14px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    line-height: 1.5;
+  }
+
+  .action-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .action-row .btn { width: auto; flex: 1; }
+
+  .restore-input-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .restore-input-label {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .restore-confirm-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .restore-confirm-input:focus { border-color: var(--danger); }
+
+  /* ── MODAL ── */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    width: 90%;
+    max-width: 520px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  }
+  .modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .modal-title { font-size: 15px; font-weight: 600; flex: 1; }
+  .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; line-height: 1; }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { padding: 20px; }
+  .modal-footer {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .modal-footer .btn { width: auto; min-width: 100px; }
+
+  .confirm-sha {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    margin: 12px 0;
+    word-break: break-all;
+    color: var(--success);
+  }
+
+  .danger-box {
+    background: var(--danger-bg);
+    border: 1px solid rgba(248,81,73,0.3);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--danger);
+    margin: 12px 0;
+    line-height: 1.5;
+  }
+
+  .type-confirm {
+    margin-top: 12px;
+  }
+  .type-confirm label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+  }
+  .type-confirm label code {
+    background: var(--pill-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    color: var(--text);
+  }
+  .type-confirm input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+  }
+  .type-confirm input:focus { border-color: var(--danger); }
+
+  /* ── TOAST ── */
+  .toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .toast {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: slideIn 0.2s ease;
+    max-width: 320px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .toast.success { border-color: rgba(63,185,80,0.4); }
+  .toast.error   { border-color: rgba(248,81,73,0.4); }
+  .toast-icon { font-size: 16px; flex-shrink: 0; }
+  @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+  /* ── MISC ── */
+  .tag {
+    font-size: 10px;
+    font-family: var(--mono);
+    padding: 2px 7px;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .tag-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(248,81,73,0.3); }
+  .tag-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(210,153,34,0.3); }
+  .tag-info { background: rgba(56,139,253,0.1); color: var(--accent-hover); border: 1px solid rgba(56,139,253,0.3); }
+  .tag-success { background: var(--success-bg); color: var(--success); border: 1px solid rgba(63,185,80,0.3); }
+
+  .tag-restored {
+    background: rgba(63,185,80,0.12);
+    color: var(--success);
+    border: 1px solid rgba(63,185,80,0.35);
+    font-size: 10px;
+    font-family: var(--mono);
+    padding: 2px 8px;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .btn-restored {
+    background: rgba(63,185,80,0.08) !important;
+    color: var(--success) !important;
+    border: 1px solid rgba(63,185,80,0.25) !important;
+    cursor: not-allowed !important;
+    opacity: 0.75;
+  }
+
+  .restored-notice {
+    background: rgba(63,185,80,0.08);
+    border: 1px solid rgba(63,185,80,0.3);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--success);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header class="header">
+  <div class="header-icon">🛡️</div>
+  <span class="header-title">GitHub Incident Recovery</span>
+  <span class="header-sub">/ force-push forensics</span>
+  <span class="header-badge">⚠ review before restore</span>
+</header>
+
+<div class="app">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+
+    <!-- Credentials -->
+    <div class="sidebar-section">
+      <div class="section-label">Configuration</div>
+      <div class="field">
+        <label>GitHub Token</label>
+        <div class="token-wrap">
+          <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off">
+          <button class="token-eye" id="token-eye-btn" title="Toggle visibility">👁</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Owner / Username</label>
+        <input type="text" id="gh-owner" placeholder="richkazz">
+      </div>
+      <div class="field">
+        <label>Repository</label>
+        <input type="text" id="gh-repo" placeholder="my-repo">
+      </div>
+      <button class="btn btn-primary" id="fetch-btn">
+        <div class="spinner" id="fetch-spinner"></div>
+        <span id="fetch-label">🔍 Fetch Events</span>
+      </button>
+    </div>
+
+    <!-- Status -->
+    <div class="sidebar-section" style="padding-top:12px;padding-bottom:12px;">
+      <div class="status-bar" style="padding:0;border:none;min-height:auto;">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Not connected</span>
+      </div>
+    </div>
+
+    <!-- Branch Filter -->
+    <div class="sidebar-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
+      <div class="section-label">Affected Branches</div>
+      <div class="branch-list" id="branch-list">
+        <div style="color:var(--text-dim);font-size:12px;">No data yet</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main" id="main-content">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">📡</div>
+      <div class="empty-title">Connect a repository</div>
+      <div class="empty-sub">Enter your GitHub token, owner, and repo name to fetch push events for forensic review.</div>
+    </div>
+
+    <div id="events-panel" style="display:none;">
+      <div class="events-header">
+        <div class="events-count">Showing <strong id="visible-count">0</strong> of <strong id="total-count">0</strong> push events</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="search-box" placeholder="Filter events…" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:12px;padding:5px 10px;outline:none;width:160px;">
+        </div>
+      </div>
+      <div id="events-list"></div>
+    </div>
+  </main>
+
+</div>
+
+<!-- ── RESTORE MODAL ── -->
+<div class="modal-backdrop" id="restore-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div style="font-size:18px;">⚠️</div>
+      <div class="modal-title">Confirm Branch Restore</div>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">You are about to force-update a remote branch. This is a destructive operation that cannot be undone automatically.</p>
+
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Branch</div>
+      <div style="font-family:var(--mono);font-size:13px;color:var(--accent-hover);margin-bottom:12px;" id="modal-branch">—</div>
+
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Restoring to SHA</div>
+      <div class="confirm-sha" id="modal-sha">—</div>
+
+      <div class="danger-box">
+        This will overwrite the current HEAD of this branch on GitHub. All commits added after this SHA will become unreachable. Ensure you have reviewed the before/after commits carefully.
+      </div>
+
+      <div class="type-confirm">
+        <label>Type <code id="modal-confirm-word">RESTORE</code> to confirm</label>
+        <input type="text" id="modal-confirm-input" placeholder="Type here…" autocomplete="off">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
+      <button class="btn btn-danger" id="modal-confirm-btn" disabled>
+        <div class="spinner" id="restore-spinner" style="border-top-color:var(--danger);border-color:rgba(248,81,73,0.2);"></div>
+        <span id="restore-label">Restore Branch</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+(function() {
+
+  // ── STATE ──
+  const state = {
+    token: '',
+    owner: '',
+    repo: '',
+    allEvents: [],
+    filteredEvents: [],
+    selectedBranch: 'all',
+    branchMap: {},     // branch -> [events]
+    expandedId: null,
+    pendingRestore: null,
+    // guardrail: track restored branches this session  { "branch:sha" -> { branch, sha, at } }
+    restoredBranches: {}
+  };
+
+  // ── DOM ──
+  const $ = id => document.getElementById(id);
+  const tokenInput   = $('gh-token');
+  const ownerInput   = $('gh-owner');
+  const repoInput    = $('gh-repo');
+  const fetchBtn     = $('fetch-btn');
+  const fetchLabel   = $('fetch-label');
+  const fetchSpinner = $('fetch-spinner');
+  const statusDot    = $('status-dot');
+  const statusText   = $('status-text');
+  const branchList   = $('branch-list');
+  const eventsList   = $('events-list');
+  const eventsPanel  = $('events-panel');
+  const emptyState   = $('empty-state');
+  const visibleCount = $('visible-count');
+  const totalCount   = $('total-count');
+  const searchBox    = $('search-box');
+
+  const restoreModal      = $('restore-modal');
+  const modalBranch       = $('modal-branch');
+  const modalSha          = $('modal-sha');
+  const modalConfirmInput = $('modal-confirm-input');
+  const modalConfirmBtn   = $('modal-confirm-btn');
+  const modalConfirmWord  = $('modal-confirm-word');
+  const restoreSpinner    = $('restore-spinner');
+  const restoreLabel      = $('restore-label');
+
+  // ── TOKEN TOGGLE ──
+  $('token-eye-btn').addEventListener('click', () => {
+    tokenInput.type = tokenInput.type === 'password' ? 'text' : 'password';
+  });
+
+  // ── HELPERS ──
+  function setStatus(state, msg) {
+    statusDot.className = 'status-dot' + (state ? ' ' + state : '');
+    statusText.textContent = msg;
+  }
+
+  function toast(msg, type = 'info') {
+    const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    t.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ️'}</span><span>${msg}</span>`;
+    $('toast-container').appendChild(t);
+    setTimeout(() => t.remove(), 4000);
+  }
+
+  function timeAgo(isoStr) {
+    const diff = Date.now() - new Date(isoStr).getTime();
+    const secs = Math.floor(diff / 1000);
+    if (secs < 60)   return `${secs}s ago`;
+    const mins = Math.floor(secs / 60);
+    if (mins < 60)   return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24)    return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+  }
+
+  function fmtDate(isoStr) {
+    return new Date(isoStr).toLocaleString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false
+    });
+  }
+
+  function shortSha(sha) {
+    return sha ? sha.substring(0, 12) : '—';
+  }
+
+  function branchFromRef(ref) {
+    return ref.replace('refs/heads/', '');
+  }
+
+  function severityOf(event) {
+    // Heuristic: if before != after and neither is all-zeros => potential overwrite
+    const before = event.payload.before || '';
+    const after  = event.payload.head   || '';
+    const isForce = before !== after && !/^0+$/.test(before);
+    const ageHrs = (Date.now() - new Date(event.created_at).getTime()) / 36e5;
+    if (isForce && ageHrs < 72) return 'high';
+    if (isForce) return 'med';
+    return 'low';
+  }
+
+  function severityIcon(sev) {
+    return { high: '🔴', med: '🟡', low: '🟢' }[sev] || '⚪';
+  }
+
+  function severityClass(sev) {
+    return { high: 'sev-high', med: 'sev-med', low: 'sev-low' }[sev] || '';
+  }
+
+  function branchColor(branch) {
+    const colors = [
+      'var(--danger)', 'var(--warning)', 'var(--success)',
+      'var(--accent-hover)', '#c586c0', '#9cdcfe', '#ce9178'
+    ];
+    let h = 0;
+    for (let i = 0; i < branch.length; i++) h = ((h << 5) - h) + branch.charCodeAt(i);
+    return colors[Math.abs(h) % colors.length];
+  }
+
+  function githubUrl(path) {
+    return `https://github.com/${state.owner}/${state.repo}${path}`;
+  }
+
+  // ── FETCH EVENTS ──
+  async function fetchEvents() {
+    state.token = tokenInput.value.trim();
+    state.owner = ownerInput.value.trim();
+    state.repo  = repoInput.value.trim();
+
+    if (!state.token || !state.owner || !state.repo) {
+      toast('Please fill in all fields.', 'error');
+      return;
+    }
+
+    fetchBtn.disabled = true;
+    fetchSpinner.style.display = 'block';
+    fetchLabel.textContent = 'Fetching…';
+    setStatus('loading', 'Connecting to GitHub API…');
+
+    try {
+      // Fetch up to 3 pages (300 events) to maximize coverage
+      let events = [];
+      for (let page = 1; page <= 3; page++) {
+        const r = await fetch(
+          `https://api.github.com/repos/${state.owner}/${state.repo}/events?per_page=100&page=${page}`,
+          { headers: {
+            'Authorization': `token ${state.token}`,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+          }}
+        );
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${r.status}`);
+        }
+        const page_events = await r.json();
+        events = events.concat(page_events.filter(e => e.type === 'PushEvent'));
+        if (page_events.length < 100) break; // no more pages
+      }
+
+      state.allEvents = events;
+      processEvents();
+      setStatus('ok', `${events.length} push event${events.length !== 1 ? 's' : ''} found`);
+      toast(`Loaded ${events.length} push events`, 'success');
+
+    } catch (err) {
+      setStatus('err', 'Error: ' + err.message);
+      toast(err.message, 'error');
+    } finally {
+      fetchBtn.disabled = false;
+      fetchSpinner.style.display = 'none';
+      fetchLabel.textContent = '🔍 Fetch Events';
+    }
+  }
+
+  // ── PROCESS ──
+  function processEvents() {
+    // Build branch map
+    state.branchMap = {};
+    for (const ev of state.allEvents) {
+      const branch = branchFromRef(ev.payload.ref || '');
+      if (!state.branchMap[branch]) state.branchMap[branch] = [];
+      state.branchMap[branch].push(ev);
+    }
+
+    renderBranches();
+    state.selectedBranch = 'all';
+    applyFilters();
+
+    emptyState.style.display = 'none';
+    eventsPanel.style.display = 'block';
+  }
+
+  // ── BRANCHES ──
+  function renderBranches() {
+    branchList.innerHTML = '';
+
+    // "All" item
+    const allItem = makeBranchItem('all', 'All branches', state.allEvents.length, state.allEvents.length > 0 && '#7d8590');
+    branchList.appendChild(allItem);
+
+    // Individual branches, sorted by event count desc
+    const sorted = Object.entries(state.branchMap).sort((a, b) => b[1].length - a[1].length);
+    for (const [branch, evs] of sorted) {
+      const item = makeBranchItem(branch, branch, evs.length, branchColor(branch));
+      branchList.appendChild(item);
+    }
+  }
+
+  function makeBranchItem(key, label, count, color) {
+    const div = document.createElement('div');
+    div.className = 'branch-item' + (state.selectedBranch === key ? ' active' : '');
+    div.innerHTML = `
+      <div class="branch-dot" style="background:${color || 'var(--text-dim)'}"></div>
+      <span class="branch-name">${label}</span>
+      <span class="branch-count">${count}</span>
+    `;
+    div.addEventListener('click', () => {
+      state.selectedBranch = key;
+      document.querySelectorAll('.branch-item').forEach(el => el.classList.remove('active'));
+      div.classList.add('active');
+      applyFilters();
+    });
+    return div;
+  }
+
+  // ── FILTERS ──
+  function applyFilters() {
+    const q = (searchBox.value || '').toLowerCase();
+    let events = state.selectedBranch === 'all'
+      ? state.allEvents
+      : (state.branchMap[state.selectedBranch] || []);
+
+    if (q) {
+      events = events.filter(ev =>
+        branchFromRef(ev.payload.ref || '').toLowerCase().includes(q) ||
+        (ev.actor.login || '').toLowerCase().includes(q) ||
+        (ev.payload.before || '').toLowerCase().includes(q) ||
+        (ev.payload.head  || '').toLowerCase().includes(q)
+      );
+    }
+
+    state.filteredEvents = events;
+    totalCount.textContent = state.allEvents.length;
+    visibleCount.textContent = events.length;
+    renderEvents();
+  }
+
+  searchBox.addEventListener('input', applyFilters);
+
+  // ── RENDER EVENTS ──
+  function renderEvents() {
+    eventsList.innerHTML = '';
+    if (!state.filteredEvents.length) {
+      eventsList.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:20px 0;">No matching events.</div>';
+      return;
+    }
+    for (const ev of state.filteredEvents) {
+      eventsList.appendChild(makeEventCard(ev));
+    }
+  }
+
+  function makeEventCard(ev) {
+    const branch  = branchFromRef(ev.payload.ref || '');
+    const before  = ev.payload.before || '';
+    const after   = ev.payload.head   || '';
+    const sev     = severityOf(ev);
+    const color   = branchColor(branch);
+    const actor   = ev.actor || {};
+    const commits = (ev.payload.commits || []);
+    const isNew   = /^0+$/.test(before);
+    const isForce = !isNew && before !== after;
+
+    // Guardrail: was this exact branch+sha already restored this session?
+    const restoreKey = `${branch}:${before}`;
+    const alreadyRestored = state.restoredBranches[restoreKey] || null;
+
+    const card = document.createElement('div');
+    card.className = 'event-card';
+    card.dataset.id = ev.id;
+
+    card.innerHTML = `
+      <div class="event-card-header">
+        <div class="event-severity ${severityClass(sev)}">${severityIcon(sev)}</div>
+        <div class="event-meta">
+          <div class="event-branch">
+            <span class="event-branch-icon" style="color:${color}">⎇</span>
+            <span style="color:${color}">${branch}</span>
+            ${isForce ? '<span class="tag tag-danger">force push</span>' : ''}
+            ${isNew   ? '<span class="tag tag-info">new branch</span>'   : ''}
+            ${alreadyRestored ? `<span class="tag-restored">✔ restored ${timeAgo(alreadyRestored.at)}</span>` : ''}
+          </div>
+          <div class="event-actor">
+            <img class="actor-avatar" src="${actor.avatar_url || ''}" alt="${actor.login}" onerror="this.style.display='none'">
+            <span>${actor.login || '?'}</span>
+            <span style="color:var(--text-dim)">·</span>
+            <code>${shortSha(before)}</code>
+            <span style="color:var(--text-dim)">→</span>
+            <code>${shortSha(after)}</code>
+            ${commits.length ? `<span style="color:var(--text-dim)">·</span><span>${commits.length} commit${commits.length!==1?'s':''}</span>` : ''}
+          </div>
+        </div>
+        <div class="event-time">
+          <span class="ago">${timeAgo(ev.created_at)}</span>
+          <span class="abs">${fmtDate(ev.created_at)}</span>
+        </div>
+        <div class="chevron">▶</div>
+      </div>
+
+      <div class="event-detail">
+        ${alreadyRestored ? `
+        <div class="restored-notice">
+          ✔ &nbsp;This branch was restored to this SHA at <strong>${fmtDate(alreadyRestored.at)}</strong> during this session. Restore is blocked to prevent double-application.
+        </div>` : isForce ? `
+        <div class="warning-box">
+          ⚠️ &nbsp;This is a force push. The "before" SHA below is the commit that was overwritten. You can restore the branch to this state.
+        </div>` : ''}
+
+        <div class="commit-compare">
+          <div class="commit-box">
+            <div class="commit-label before">Before (target)</div>
+            <div class="commit-sha clickable" data-sha="${before}" data-type="commit" title="Open on GitHub">${before || 'n/a'}</div>
+          </div>
+          <div class="arrow-icon">→</div>
+          <div class="commit-box">
+            <div class="commit-label after">After (current)</div>
+            <div class="commit-sha clickable" data-sha="${after}" data-type="commit" title="Open on GitHub">${after || 'n/a'}</div>
+          </div>
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-item">
+            <div class="detail-key">Push ID</div>
+            <div class="detail-val">${ev.payload.push_id || '—'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-key">Repo ID</div>
+            <div class="detail-val">${ev.repo?.id || '—'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-key">Actor ID</div>
+            <div class="detail-val">${actor.id || '—'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-key">Event ID</div>
+            <div class="detail-val">${ev.id}</div>
+          </div>
+        </div>
+
+        ${commits.length ? `
+        <div style="margin-bottom:12px;">
+          <div class="detail-key" style="margin-bottom:6px;">Commits in push</div>
+          ${commits.slice(0, 5).map(c => `
+            <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:4px;font-size:12px;">
+              <code style="flex-shrink:0;color:var(--accent-hover);">${c.sha ? c.sha.substring(0,8) : '?'}</code>
+              <span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(c.message || '')}</span>
+            </div>
+          `).join('')}
+          ${commits.length > 5 ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">+ ${commits.length-5} more commits</div>` : ''}
+        </div>` : ''}
+
+        <hr class="divider">
+
+        <div class="action-row">
+          <a href="${githubUrl(`/commit/${before}`)}" target="_blank" class="btn btn-ghost" style="text-decoration:none;font-size:12px;" ${isNew ? 'style="opacity:0.4;pointer-events:none;"' : ''}>
+            🔍 View "before" commit
+          </a>
+          <a href="${githubUrl(`/compare/${before}...${after}`)}" target="_blank" class="btn btn-ghost" style="text-decoration:none;font-size:12px;">
+            📊 Compare diff
+          </a>
+          ${isForce && !isNew ? (alreadyRestored
+            ? `<button class="btn btn-restored" disabled title="Already restored this session — blocked to prevent double-application">✔ Already Restored</button>`
+            : `<button class="btn btn-danger" data-branch="${branch}" data-sha="${before}" data-event-id="${ev.id}" onclick="window._openRestore(this)">⏪ Restore to "before"</button>`
+          ) : ''}
+        </div>
+      </div>
+    `;
+
+    // Toggle expand
+    card.querySelector('.event-card-header').addEventListener('click', () => {
+      const isOpen = card.classList.contains('expanded');
+      document.querySelectorAll('.event-card.expanded').forEach(c => c.classList.remove('expanded'));
+      if (!isOpen) card.classList.add('expanded');
+    });
+
+    return card;
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── RESTORE FLOW ──
+  window._openRestore = function(btn) {
+    const branch = btn.dataset.branch;
+    const sha    = btn.dataset.sha;
+
+    // Guardrail: block if this exact branch+sha was already restored this session
+    const restoreKey = `${branch}:${sha}`;
+    if (state.restoredBranches[restoreKey]) {
+      const rec = state.restoredBranches[restoreKey];
+      toast(`Already restored "${branch}" to this SHA at ${fmtDate(rec.at)} — blocked.`, 'error');
+      return;
+    }
+
+    state.pendingRestore = { branch, sha };
+
+    modalBranch.textContent = branch;
+    modalSha.textContent    = sha;
+    modalConfirmInput.value = '';
+    modalConfirmBtn.disabled = true;
+    modalConfirmWord.textContent = 'RESTORE';
+
+    restoreModal.classList.add('open');
+    setTimeout(() => modalConfirmInput.focus(), 100);
+  };
+
+  modalConfirmInput.addEventListener('input', () => {
+    modalConfirmBtn.disabled = modalConfirmInput.value.trim() !== 'RESTORE';
+  });
+
+  $('modal-close').addEventListener('click',  () => restoreModal.classList.remove('open'));
+  $('modal-cancel').addEventListener('click', () => restoreModal.classList.remove('open'));
+
+  modalConfirmBtn.addEventListener('click', async () => {
+    if (!state.pendingRestore) return;
+    const { branch, sha } = state.pendingRestore;
+
+    // Double-check guardrail at confirm time (race condition safety)
+    const restoreKey = `${branch}:${sha}`;
+    if (state.restoredBranches[restoreKey]) {
+      restoreModal.classList.remove('open');
+      toast(`Already restored "${branch}" to this SHA — blocked.`, 'error');
+      return;
+    }
+
+    modalConfirmBtn.disabled = true;
+    restoreSpinner.style.display = 'block';
+    restoreLabel.textContent = 'Restoring…';
+
+    try {
+      const r = await fetch(
+        `https://api.github.com/repos/${state.owner}/${state.repo}/git/refs/heads/${encodeURIComponent(branch)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `token ${state.token}`,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+            'X-GitHub-Api-Version': '2022-11-28'
+          },
+          body: JSON.stringify({ sha, force: true })
+        }
+      );
+
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.message || `HTTP ${r.status}`);
+      }
+
+      // Record the restore — this is what powers both guardrails
+      const restoredAt = new Date().toISOString();
+      state.restoredBranches[restoreKey] = { branch, sha, at: restoredAt };
+
+      restoreModal.classList.remove('open');
+      toast(`Branch "${branch}" restored to ${sha.substring(0,12)}`, 'success');
+      setStatus('ok', `Restored ${branch} @ ${sha.substring(0,8)}`);
+
+      // Re-render only the affected event cards so the UI reflects the new state
+      // without a full reload. Find all cards for this branch and rebuild them.
+      const affectedEvents = state.allEvents.filter(ev =>
+        branchFromRef(ev.payload.ref || '') === branch &&
+        ev.payload.before === sha
+      );
+      for (const ev of affectedEvents) {
+        const oldCard = eventsList.querySelector(`.event-card[data-id="${ev.id}"]`);
+        if (oldCard) {
+          const wasExpanded = oldCard.classList.contains('expanded');
+          const newCard = makeEventCard(ev);
+          if (wasExpanded) newCard.classList.add('expanded');
+          oldCard.replaceWith(newCard);
+        }
+      }
+
+      // Also refresh branch sidebar to reflect any visual changes
+      renderBranches();
+
+    } catch (err) {
+      toast('Restore failed: ' + err.message, 'error');
+    } finally {
+      restoreSpinner.style.display = 'none';
+      restoreLabel.textContent = 'Restore Branch';
+      modalConfirmBtn.disabled = false;
+    }
+  });
+
+  // ── FETCH BUTTON ──
+  fetchBtn.addEventListener('click', fetchEvents);
+
+  // Enter key in fields
+  [tokenInput, ownerInput, repoInput].forEach(el => {
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') fetchEvents(); });
+  });
+
+  // ── INIT ──
+  setStatus('', 'Not connected');
+
+})();
+</script>
+</body>
+</html>
