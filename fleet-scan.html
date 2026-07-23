@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PolinRider Fleet Scanner</title>
+<style>
+  :root {
+    --bg: #0d1117; --bg-card: #161b22; --bg-card-hover: #1c2128; --bg-input: #0d1117;
+    --border: #30363d; --border-focus: #388bfd; --text: #e6edf3; --text-muted: #7d8590;
+    --text-dim: #484f58; --accent: #388bfd; --accent-hover: #58a6ff;
+    --danger: #f85149; --danger-bg: rgba(248,81,73,0.1);
+    --warning: #d29922; --warning-bg: rgba(210,153,34,0.1);
+    --success: #3fb950; --success-bg: rgba(63,185,80,0.1); --pill-bg: #21262d;
+    --mono: "JetBrains Mono","Fira Code","Cascadia Code",monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --radius: 6px; --radius-lg: 10px;
+  }
+  *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.6; }
+
+  /* header */
+  .header { border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; background: rgba(13,17,23,0.95); backdrop-filter: blur(8px); z-index: 100; }
+  .header-icon { width: 32px; height: 32px; background: var(--danger-bg); border: 1px solid rgba(248,81,73,0.3); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .header-title { font-size: 15px; font-weight: 600; }
+  .header-sub { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+  .header-nav { margin-left: auto; display: flex; gap: 8px; }
+  .nav-link { font-size: 12px; color: var(--text-muted); text-decoration: none; border: 1px solid var(--border); padding: 5px 11px; border-radius: 20px; }
+  .nav-link:hover { color: var(--text); border-color: var(--text-muted); }
+  .nav-link.active { color: var(--accent-hover); border-color: rgba(56,139,253,0.4); background: rgba(56,139,253,0.08); }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px; }
+
+  /* config bar */
+  .config-bar { display: flex; gap: 12px; align-items: flex-end; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field.grow { flex: 1; min-width: 240px; }
+  .field label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+  .field input { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: var(--mono); font-size: 12px; padding: 8px 10px; outline: none; }
+  .field input:focus { border-color: var(--border-focus); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius); border: none; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { background: #21262d; color: var(--text-muted); cursor: not-allowed; }
+  .btn-danger { background: rgba(248,81,73,0.15); color: var(--danger); border: 1px solid rgba(248,81,73,0.3); }
+  .btn-danger:hover { background: rgba(248,81,73,0.25); }
+  .btn-danger:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-ghost { background: var(--pill-bg); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--bg-card-hover); border-color: var(--text-muted); }
+
+  .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* step section */
+  .step { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 20px; overflow: hidden; }
+  .step.disabled { opacity: .5; pointer-events: none; }
+  .step-head { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  .step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--pill-bg); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+  .step-title { font-size: 14px; font-weight: 600; }
+  .step-sub { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+  .step-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .step-body { padding: 14px 18px; }
+
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar input[type=text] { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 12px; padding: 6px 10px; outline: none; width: 220px; }
+  .link-btn { background: none; border: none; color: var(--accent-hover); font-size: 12px; cursor: pointer; padding: 0; }
+  .link-btn:hover { text-decoration: underline; }
+  .count-note { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+  /* list rows */
+  .rows { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; max-height: 460px; overflow-y: auto; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: none; }
+  .row:hover { background: var(--bg-card-hover); }
+  .row input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+  .row input[type=checkbox]:disabled { cursor: not-allowed; }
+  .row-main { flex: 1; min-width: 0; }
+  .row-title { font-family: var(--mono); font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .row-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; word-break: break-all; }
+  .row-sub code { color: var(--accent-hover); }
+
+  .tag { font-size: 10px; font-family: var(--mono); padding: 1px 7px; border-radius: 20px; display: inline-flex; align-items: center; }
+  .tag-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(248,81,73,0.3); }
+  .tag-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(210,153,34,0.3); }
+  .tag-info { background: rgba(56,139,253,0.1); color: var(--accent-hover); border: 1px solid rgba(56,139,253,0.3); }
+  .tag-success { background: var(--success-bg); color: var(--success); border: 1px solid rgba(63,185,80,0.3); }
+  .tag-dim { background: var(--pill-bg); color: var(--text-muted); border: 1px solid var(--border); }
+
+  .ioc-chip { font-size: 10px; font-family: var(--mono); background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(248,81,73,0.3); padding: 1px 7px; border-radius: 20px; display: inline-block; margin: 2px 4px 0 0; }
+
+  .empty { color: var(--text-muted); font-size: 13px; padding: 20px; text-align: center; }
+  .progress { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+  .bar { height: 4px; background: var(--pill-bg); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+
+  .banner { border-radius: var(--radius); padding: 10px 12px; font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
+  .banner-warn { background: var(--warning-bg); border: 1px solid rgba(210,153,34,0.3); color: var(--warning); }
+  .banner-danger { background: var(--danger-bg); border: 1px solid rgba(248,81,73,0.3); color: var(--danger); }
+
+  /* modal */
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; align-items: center; justify-content: center; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); width: 90%; max-width: 520px; max-height: 80vh; overflow-y: auto; box-shadow: 0 24px 64px rgba(0,0,0,0.5); }
+  .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .modal-title { font-size: 15px; font-weight: 600; flex: 1; }
+  .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; }
+  .modal-body { padding: 20px; }
+  .modal-body code { background: var(--pill-bg); padding: 1px 5px; border-radius: 3px; font-family: var(--mono); color: var(--text); }
+  .modal-body input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: var(--mono); font-size: 12px; padding: 7px 10px; outline: none; margin-top: 8px; }
+  .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+  .danger-box { background: var(--danger-bg); border: 1px solid rgba(248,81,73,0.3); border-radius: var(--radius); padding: 10px 12px; font-size: 12px; color: var(--danger); margin: 12px 0; line-height: 1.5; }
+
+  /* toast */
+  .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+  .toast { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; font-size: 13px; display: flex; align-items: center; gap: 8px; max-width: 340px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+  .toast.success { border-color: rgba(63,185,80,0.4); }
+  .toast.error { border-color: rgba(248,81,73,0.4); }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-icon">🛰️</div>
+  <span class="header-title">PolinRider Fleet Scanner</span>
+  <span class="header-sub">/ scan &amp; fix across all repos</span>
+  <nav class="header-nav">
+    <a class="nav-link" href="github-recovery-tool.html">Single repo</a>
+    <a class="nav-link active" href="fleet-scan.html">All repos</a>
+  </nav>
+</header>
+
+<div class="wrap">
+
+  <!-- Config -->
+  <div class="config-bar">
+    <div class="field grow">
+      <label for="gh-token">GitHub Token &nbsp;<span style="color:var(--text-dim)">(needs <code>repo</code>; write scope required to fix)</span></label>
+      <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="gh-owner">Owner / org <span style="color:var(--text-dim)">(optional)</span></label>
+      <input type="text" id="gh-owner" placeholder="all accessible" autocomplete="off" style="width:200px" />
+    </div>
+    <button class="btn btn-primary" id="load-btn">
+      <div class="spinner" id="load-spinner"></div>
+      <span id="load-label">📚 Load my repositories</span>
+    </button>
+  </div>
+
+  <!-- STEP 1: repos -->
+  <section class="step" id="step-repos">
+    <div class="step-head">
+      <div class="step-num">1</div>
+      <div class="step-title">Repositories</div>
+      <div class="step-sub" id="repos-sub">load to begin</div>
+      <div class="step-actions">
+        <button class="btn btn-primary" id="scan-btn" disabled>
+          <div class="spinner" id="scan-spinner"></div>
+          <span id="scan-label">🔍 Scan selected (0)</span>
+        </button>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="toolbar" id="repos-toolbar" style="display:none;">
+        <input type="text" id="repo-filter" placeholder="Filter repositories…" />
+        <button class="link-btn" id="sel-all-repos">select all</button>
+        <button class="link-btn" id="sel-none-repos">clear</button>
+        <button class="link-btn" id="sel-writable-repos">only writable</button>
+        <span class="count-note" id="repos-count">0 selected</span>
+      </div>
+      <div class="rows" id="repos-list"><div class="empty">No repositories loaded yet.</div></div>
+      <div class="bar" id="scan-bar" style="display:none;"><div></div></div>
+      <div class="progress" id="scan-progress" style="margin-top:8px;"></div>
+    </div>
+  </section>
+
+  <!-- STEP 2: infected -->
+  <section class="step disabled" id="step-infected">
+    <div class="step-head">
+      <div class="step-num">2</div>
+      <div class="step-title">Infected branches</div>
+      <div class="step-sub" id="infected-sub">scan first</div>
+      <div class="step-actions">
+        <button class="btn btn-danger" id="fix-btn" disabled>
+          <div class="spinner" id="fix-spinner"></div>
+          <span id="fix-label">⏪ Fix selected (0)</span>
+        </button>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="banner banner-warn" id="containment-note">
+        ⚠️ Fixing resets each branch tip to a content-verified clean commit (force-update; the infected tip stays in the Activity log, so it's reversible). This does <strong>not</strong> stop re-infection — revoke leaked tokens <em>and</em> OAuth/GitHub-App grants, and find the machine running <code>temp_auto_push.bat</code>, or cleaned repos get re-pushed.
+      </div>
+      <div class="toolbar" id="infected-toolbar" style="display:none;">
+        <input type="text" id="infected-filter" placeholder="Filter branches / files…" />
+        <button class="link-btn" id="sel-all-fix">select all fixable</button>
+        <button class="link-btn" id="sel-none-fix">clear</button>
+        <span class="count-note" id="infected-count">0 selected</span>
+      </div>
+      <div class="rows" id="infected-list"><div class="empty">Nothing scanned yet.</div></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- confirm modal -->
+<div class="modal-backdrop" id="fix-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div style="font-size:18px;">⚠️</div>
+      <div class="modal-title">Confirm bulk fix</div>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-muted);">You are about to force-restore <strong id="fix-count-txt">0</strong> infected branch(es) across your repositories, each to its own <strong>content-verified clean</strong> commit.</p>
+      <div class="danger-box">This overwrites each branch tip on GitHub. Only branches with a verified-clean target and push access are included. The overwritten SHAs remain in each repo's Activity log.</div>
+      <label style="font-size:12px;color:var(--text-muted);">Type <code>FIX ALL</code> to confirm</label>
+      <input type="text" id="fix-confirm-input" placeholder="Type here…" autocomplete="off" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
+      <button class="btn btn-danger" id="modal-confirm" disabled>
+        <div class="spinner" id="modal-spinner" style="border-top-color:var(--danger);border-color:rgba(248,81,73,0.2);"></div>
+        <span id="modal-confirm-label">Fix branches</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script src="polinrider-engine.js"></script>
+<script>
+(function () {
+  const P = window.PolinRider;
+  const $ = (id) => document.getElementById(id);
+  const escHtml = P.escHtml, shortSha = P.shortSha;
+
+  const state = {
+    client: null,
+    repos: [],                 // from engine.listRepos()
+    selectedRepos: new Set(),  // fullName
+    findings: [],              // engine findings + { id, selected, restored }
+    restored: {},              // "owner/repo@branch:sha" -> true
+  };
+
+  // ── toast ──
+  function toast(msg, type = "info") {
+    const icons = { success: "✅", error: "❌", info: "ℹ️" };
+    const t = document.createElement("div");
+    t.className = `toast ${type}`;
+    t.innerHTML = `<span>${icons[type] || "ℹ️"}</span><span>${escHtml(msg)}</span>`;
+    $("toast-container").appendChild(t);
+    setTimeout(() => t.remove(), 5000);
+  }
+  function fmtAgo(iso) {
+    if (!iso) return "";
+    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    return d <= 0 ? "today" : d + "d ago";
+  }
+  function ghLink(owner, repo, path) { return `https://github.com/${owner}/${repo}${path}`; }
+
+  // ════════════════ STEP 1: load repos ════════════════
+  async function loadRepos() {
+    const token = $("gh-token").value.trim();
+    if (!token) { toast("Enter a GitHub token first.", "error"); return; }
+    const owner = $("gh-owner").value.trim().toLowerCase(); // optional: restrict to one owner/org
+    state.client = P.createClient(token);
+    $("load-btn").disabled = true;
+    $("load-spinner").style.display = "block";
+    $("load-label").textContent = "Loading…";
+    try {
+      let repos = await state.client.listRepos();
+      if (owner) repos = repos.filter((r) => r.owner.toLowerCase() === owner);
+      state.repos = repos;
+      state.selectedRepos.clear();
+      // preselect writable, non-archived repos as a sensible default
+      for (const r of state.repos) if (r.canPush && !r.archived) state.selectedRepos.add(r.fullName);
+      $("repos-toolbar").style.display = "flex";
+      $("repos-sub").textContent = owner
+        ? `${state.repos.length} for ${owner}`
+        : `${state.repos.length} accessible`;
+      renderRepos();
+      if (owner && !state.repos.length) {
+        toast(`No accessible repos found under "${owner}". Check the name, or that your token can see that org.`, "error");
+      } else {
+        toast(`Loaded ${state.repos.length} repositories${owner ? ` for ${owner}` : ""}`, "success");
+      }
+    } catch (e) {
+      toast("Load failed: " + e.message, "error");
+    } finally {
+      $("load-btn").disabled = false;
+      $("load-spinner").style.display = "none";
+      $("load-label").textContent = "📚 Load my repositories";
+    }
+  }
+
+  function filteredRepos() {
+    const q = ($("repo-filter").value || "").toLowerCase();
+    return q ? state.repos.filter((r) => r.fullName.toLowerCase().includes(q)) : state.repos;
+  }
+
+  function renderRepos() {
+    const list = $("repos-list");
+    const repos = filteredRepos();
+    if (!repos.length) { list.innerHTML = '<div class="empty">No repositories match.</div>'; }
+    else {
+      list.innerHTML = "";
+      for (const r of repos) {
+        const row = document.createElement("div");
+        row.className = "row";
+        const tags = [
+          r.private ? '<span class="tag tag-dim">private</span>' : "",
+          r.fork ? '<span class="tag tag-dim">fork</span>' : "",
+          r.archived ? '<span class="tag tag-warning">archived</span>' : "",
+          r.canPush ? "" : '<span class="tag tag-warning">read-only</span>',
+        ].join("");
+        row.innerHTML = `
+          <input type="checkbox" data-repo="${escHtml(r.fullName)}" ${state.selectedRepos.has(r.fullName) ? "checked" : ""} />
+          <div class="row-main">
+            <div class="row-title">${escHtml(r.fullName)} ${tags}</div>
+            <div class="row-sub">default <code>${escHtml(r.defaultBranch || "?")}</code> · pushed ${fmtAgo(r.pushedAt)}</div>
+          </div>`;
+        row.querySelector("input").addEventListener("change", (e) => {
+          if (e.target.checked) state.selectedRepos.add(r.fullName);
+          else state.selectedRepos.delete(r.fullName);
+          updateReposCount();
+        });
+        list.appendChild(row);
+      }
+    }
+    updateReposCount();
+  }
+
+  function updateReposCount() {
+    const n = state.selectedRepos.size;
+    $("repos-count").textContent = `${n} selected`;
+    const btn = $("scan-btn");
+    btn.disabled = n === 0;
+    $("scan-label").textContent = `🔍 Scan selected (${n})`;
+  }
+
+  // ════════════════ STEP 2: scan selected ════════════════
+  async function scanSelected() {
+    const targets = state.repos.filter((r) => state.selectedRepos.has(r.fullName));
+    if (!targets.length) return;
+    $("scan-btn").disabled = true;
+    $("load-btn").disabled = true;
+    $("scan-spinner").style.display = "block";
+    $("scan-bar").style.display = "block";
+    const barFill = $("scan-bar").firstElementChild;
+    state.findings = [];
+
+    let totalInfected = 0;
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const r = targets[i];
+        barFill.style.width = Math.round((i / targets.length) * 100) + "%";
+        $("scan-progress").textContent = `Scanning ${i + 1}/${targets.length}: ${r.fullName}`;
+        try {
+          const { findings } = await state.client.scanRepo(r.owner, r.name, (bi, bt, bn) => {
+            $("scan-progress").textContent = `Scanning ${i + 1}/${targets.length}: ${r.fullName} — branch ${bi + 1}/${bt} (${bn})`;
+          });
+          for (const f of findings) {
+            f.id = `${f.owner}/${f.repo}@${f.branch}`;
+            f.canPush = r.canPush;
+            f.selected = !!(f.target && f.target.verified && r.canPush);
+            state.findings.push(f);
+            totalInfected++;
+          }
+          renderInfected(); // progressive
+        } catch (e) {
+          toast(`${r.fullName}: ${e.message}`, "error");
+        }
+      }
+      barFill.style.width = "100%";
+      $("scan-progress").textContent = `Done — scanned ${targets.length} repo(s), found ${totalInfected} infected branch(es).`;
+      $("step-infected").classList.remove("disabled");
+      $("infected-sub").textContent = `${totalInfected} across ${new Set(state.findings.map((f) => f.repo)).size} repo(s)`;
+      $("infected-toolbar").style.display = state.findings.length ? "flex" : "none";
+      renderInfected();
+      toast(totalInfected ? `${totalInfected} infected branch(es) found` : "No PolinRider IOCs found", totalInfected ? "error" : "success");
+    } finally {
+      $("scan-spinner").style.display = "none";
+      $("scan-btn").disabled = false;
+      $("load-btn").disabled = false;
+    }
+  }
+
+  // ════════════════ STEP 3: review + fix ════════════════
+  function filteredInfected() {
+    const q = ($("infected-filter").value || "").toLowerCase();
+    if (!q) return state.findings;
+    return state.findings.filter((f) =>
+      f.id.toLowerCase().includes(q) ||
+      f.files.some((fl) => fl.path.toLowerCase().includes(q) || fl.iocs.join(" ").toLowerCase().includes(q)));
+  }
+
+  function isFixable(f) {
+    return !!(f.target && f.target.sha && f.target.verified && f.canPush && !state.restored[f.id + ":" + f.target.sha]);
+  }
+
+  function renderInfected() {
+    const list = $("infected-list");
+    const items = filteredInfected();
+    if (!items.length) {
+      list.innerHTML = '<div class="empty">' + (state.findings.length ? "No matches." : "No infected branches.") + "</div>";
+      updateFixCount();
+      return;
+    }
+    list.innerHTML = "";
+    for (const f of items) {
+      const restoredRec = f.target && state.restored[f.id + ":" + f.target.sha];
+      const fixable = isFixable(f);
+      const row = document.createElement("div");
+      row.className = "row";
+      const iocTotal = f.files.reduce((n, fl) => n + fl.iocs.length, 0);
+
+      let statusTag;
+      if (restoredRec) statusTag = '<span class="tag tag-success">✔ fixed</span>';
+      else if (!f.canPush) statusTag = '<span class="tag tag-warning">read-only</span>';
+      else if (f.target && f.target.verified) statusTag = '<span class="tag tag-success">clean SHA ready</span>';
+      else statusTag = '<span class="tag tag-warning">manual review</span>';
+
+      const targetTxt = f.target && f.target.sha
+        ? `→ <code>${shortSha(f.target.sha)}</code> ${f.target.verified ? "" : "(unverified)"}`
+        : "→ <span style='color:var(--warning)'>no verified target</span>";
+
+      const iocChips = f.files.slice(0, 4).map((fl) =>
+        fl.iocs.slice(0, 2).map((i) => `<span class="ioc-chip">${escHtml(i)}</span>`).join("")).join("");
+
+      row.innerHTML = `
+        <input type="checkbox" data-id="${escHtml(f.id)}" ${f.selected && fixable ? "checked" : ""} ${fixable ? "" : "disabled"} />
+        <div class="row-main">
+          <div class="row-title">
+            <a href="${ghLink(f.owner, f.repo, "/tree/" + encodeURIComponent(f.branch))}" target="_blank" style="color:var(--accent-hover);text-decoration:none;">${escHtml(f.owner)}/${escHtml(f.repo)}</a>
+            <span style="color:var(--text-dim)">⎇</span> <span>${escHtml(f.branch)}</span>
+            <span class="tag tag-danger">${iocTotal} IOC${iocTotal !== 1 ? "s" : ""}</span>
+            ${f.artifacts.length ? '<span class="tag tag-warning">re-infection engine</span>' : ""}
+            ${statusTag}
+          </div>
+          <div class="row-sub">
+            tip <code>${shortSha(f.head)}</code> ${targetTxt}
+            ${f.files.length ? " · " + f.files.length + " file(s): " + f.files.slice(0,3).map(fl=>escHtml(fl.path)).join(", ") : ""}
+            ${!f.target.verified ? `<br><span style="color:var(--warning)">${escHtml(f.target.reason || "")}</span>` : ""}
+            <div>${iocChips}</div>
+          </div>
+        </div>`;
+      const cb = row.querySelector("input");
+      if (fixable) cb.addEventListener("change", (e) => { f.selected = e.target.checked; updateFixCount(); });
+      list.appendChild(row);
+    }
+    updateFixCount();
+  }
+
+  function selectedFindings() {
+    return state.findings.filter((f) => f.selected && isFixable(f));
+  }
+  function updateFixCount() {
+    const n = selectedFindings().length;
+    $("infected-count").textContent = `${n} selected`;
+    $("fix-btn").disabled = n === 0;
+    $("fix-label").textContent = `⏪ Fix selected (${n})`;
+  }
+
+  // confirm modal
+  function openFixModal() {
+    const n = selectedFindings().length;
+    if (!n) return;
+    $("fix-count-txt").textContent = n;
+    $("fix-confirm-input").value = "";
+    $("modal-confirm").disabled = true;
+    $("fix-modal").classList.add("open");
+    setTimeout(() => $("fix-confirm-input").focus(), 100);
+  }
+  function closeFixModal() { $("fix-modal").classList.remove("open"); }
+
+  async function runFix() {
+    closeFixModal();
+    const items = selectedFindings();
+    $("fix-btn").disabled = true;
+    $("fix-spinner").style.display = "block";
+    let done = 0, fail = 0;
+    for (let i = 0; i < items.length; i++) {
+      const f = items[i];
+      $("fix-label").textContent = `Fixing ${i + 1}/${items.length}…`;
+      const paths = f.files.map((fl) => fl.path);
+      const res = await state.client.restore(f.owner, f.repo, f.branch, f.target.sha, paths);
+      if (res.ok) {
+        done++;
+        state.restored[f.id + ":" + f.target.sha] = { at: new Date().toISOString() };
+        f.selected = false;
+      } else {
+        fail++;
+        toast(`${f.id}: ${res.msg}`, "error");
+      }
+      renderInfected();
+    }
+    $("fix-spinner").style.display = "none";
+    const summary = `Fix complete — ${done} restored${fail ? `, ${fail} failed` : ""}`;
+    toast(summary, fail ? "error" : "success");
+  }
+
+  // ── wiring ──
+  $("load-btn").addEventListener("click", loadRepos);
+  $("gh-token").addEventListener("keydown", (e) => { if (e.key === "Enter") loadRepos(); });
+  $("gh-owner").addEventListener("keydown", (e) => { if (e.key === "Enter") loadRepos(); });
+  $("repo-filter").addEventListener("input", renderRepos);
+  $("scan-btn").addEventListener("click", scanSelected);
+  $("sel-all-repos").addEventListener("click", () => { for (const r of filteredRepos()) state.selectedRepos.add(r.fullName); renderRepos(); });
+  $("sel-none-repos").addEventListener("click", () => { for (const r of filteredRepos()) state.selectedRepos.delete(r.fullName); renderRepos(); });
+  $("sel-writable-repos").addEventListener("click", () => { state.selectedRepos.clear(); for (const r of state.repos) if (r.canPush && !r.archived) state.selectedRepos.add(r.fullName); renderRepos(); });
+
+  $("infected-filter").addEventListener("input", renderInfected);
+  $("fix-btn").addEventListener("click", openFixModal);
+  $("sel-all-fix").addEventListener("click", () => { for (const f of filteredInfected()) if (isFixable(f)) f.selected = true; renderInfected(); });
+  $("sel-none-fix").addEventListener("click", () => { for (const f of state.findings) f.selected = false; renderInfected(); });
+
+  $("fix-confirm-input").addEventListener("input", (e) => { $("modal-confirm").disabled = e.target.value.trim() !== "FIX ALL"; });
+  $("modal-close").addEventListener("click", closeFixModal);
+  $("modal-cancel").addEventListener("click", closeFixModal);
+  $("modal-confirm").addEventListener("click", runFix);
+})();
+</script>
+</body>
+</html>

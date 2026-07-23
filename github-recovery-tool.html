@@ -910,7 +910,11 @@
       <div class="header-icon">🛡️</div>
       <span class="header-title">PolinRider Recovery</span>
       <span class="header-sub">/ IOC scan &amp; branch restore</span>
-      <span class="header-badge">⚠ review before restore</span>
+      <nav style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        <a href="github-recovery-tool.html" style="font-size:12px;color:var(--accent-hover);text-decoration:none;border:1px solid rgba(56,139,253,0.4);background:rgba(56,139,253,0.08);padding:5px 11px;border-radius:20px;">Single repo</a>
+        <a href="fleet-scan.html" style="font-size:12px;color:var(--text-muted);text-decoration:none;border:1px solid var(--border);padding:5px 11px;border-radius:20px;">All repos</a>
+        <span class="header-badge" style="margin-left:0;">⚠ review before restore</span>
+      </nav>
     </header>
 
     <div class="app">
@@ -1133,101 +1137,18 @@
     <!-- ── TOAST ── -->
     <div class="toast-container" id="toast-container"></div>
 
+    <script src="polinrider-engine.js"></script>
     <script>
       (function () {
         // ════════════════════════════════════════════════════════════════════
-        //  PolinRider Recovery Tool
-        //  All network requests go ONLY to https://api.github.com using the
-        //  token you enter. Nothing is sent anywhere else. Detection is done by
-        //  reading file *contents* over the GitHub REST API and matching known
-        //  PolinRider indicators of compromise (IOCs) — never by running any
-        //  script supplied by the malware or its repo.
+        //  PolinRider Recovery Tool (single-repo UI)
+        //  Detection + restore logic lives in the shared polinrider-engine.js
+        //  (window.PolinRider) — the single source of truth for IOC signatures,
+        //  so this page and fleet-scan.html can never drift apart. All network
+        //  requests go ONLY to https://api.github.com using the token you enter.
         // ════════════════════════════════════════════════════════════════════
-
-        const API = "https://api.github.com";
-
-        // ── PolinRider IOC SIGNATURES ──
-        // High-signal markers pulled from published PolinRider / DPRK
-        // "Contagious Interview" analysis. Each is either a literal substring
-        // (`str`) or a regex (`re`). A file is considered infected if ANY match.
-        const SIGNATURES = [
-          { label: "PolinRider marker (v1 mar-2026)", str: "rmcej%otb%" },
-          { label: "PolinRider marker (v2 apr-2026)", str: "Cot%3t=shtP" },
-          { label: "XOR payload key", str: "2[gWfGj;<:-93Z^C" },
-          {
-            label: "obfuscated decoder _\$_hex",
-            re: /_\$_[0-9a-fA-F]{2,8}\s*=\s*\(function/,
-          },
-          { label: "global['!'] injection", re: /global\s*\[\s*'!'\s*\]\s*=/ },
-          {
-            label: "global['_V'] version tag",
-            re: /global\s*\[\s*'_V'\s*\]\s*=\s*['"]8-/,
-          },
-          {
-            label: "atob(process.env) C2 loader",
-            re: /atob\s*\(\s*process\.env/,
-          },
-          { label: "eval(await …) stage-2 exec", re: /eval\s*\(\s*await\b/ },
-          {
-            label: "node-fetch C2 fetch",
-            re: /require\s*\(\s*['"]node-fetch['"]\s*\)/,
-          },
-          {
-            label: "Vercel C2 endpoint",
-            re: /[a-z0-9.-]+\.vercel\.app\/(settings|api)\b/i,
-          },
-          {
-            label: "TRON dead-drop address",
-            re: /T(?:MfKQEd7TJJa5xNZJZ2Lep838vrzrs7mAP|XfxHUet9pJVU1BgVkBAbrES4YUc1nGzcG)/,
-          },
-          {
-            label: "TRON RPC (trongrid)",
-            re: /api\.trongrid\.io\/v1\/accounts/,
-          },
-          {
-            label: "Aptos RPC dead-drop",
-            re: /fullnode\.mainnet\.aptoslabs\.com\/v1\/accounts/,
-          },
-          {
-            label: ".vscode auto-run task",
-            re: /task\.allowAutomaticTasks|["']runOn["']\s*:\s*["']folderOpen["']/,
-          },
-          {
-            label: "runs fake-font as node script",
-            re: /node\s+\.?\/?[^"'\s]*fonts\/[^"'\s]*\.woff2?/,
-          },
-          {
-            label: ".gitignore concealment of engine",
-            re: /(temp_auto_push|temp_interactive_push|config)\.bat|branch_structure\.json/,
-          },
-        ];
-
-        // Malicious npm packages seen dropping the loader (checked in package.json / lockfiles).
-        const BAD_PACKAGES = [
-          "tailwindcss-style-animate",
-          "tailwind-mainanimation",
-          "tailwind-autoanimation",
-          "tailwind-animationbased",
-          "tailwindcss-typography-style",
-          "tailwindcss-style-modify",
-          "tailwindcss-animate-style",
-        ];
-
-        // ── Which files are worth reading for each branch ──
-        const CONFIG_RE =
-          /(^|\/)(postcss|tailwind|eslint|next|vite|webpack|rollup|svelte|gridsome|vue|astro|babel|drizzle|truffle)\.config\.(js|cjs|mjs|ts)$/i;
-        const ENTRY_RE = /(^|\/)(App|index)\.(js|jsx|ts|tsx)$/; // low-confidence: only flags if a SIGNATURE also matches
-        const VSCODE_RE = /(^|\/)\.vscode\/(tasks|settings)\.json$/;
-        const GITIGNORE_RE = /(^|\/)\.gitignore$/;
-        const FONT_RE = /(^|\/)(public|static|assets)\/.*\.(woff2?|ttf|otf)$/i;
-        const PKG_RE =
-          /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/;
-        // Presence alone = high-confidence compromise (the re-infection engine committed into the repo).
-        const ARTIFACT_RE =
-          /(^|\/)(temp_auto_push\.bat|temp_interactive_push\.bat|config\.bat|branch_structure\.json)$/i;
-
-        const MAX_FILES_PER_BRANCH = 80; // cap blob fetches per branch to stay under rate limits
-        const MAX_ACTIVITY_PAGES = 3; // 300 activity entries back per repo
+        const PolinRider = window.PolinRider;
+        let client = null; // engine client, created per scan (fresh IOC cache)
 
         // ── STATE ──
         const state = {
@@ -1332,281 +1253,6 @@
           });
         }
 
-        // ── GitHub API wrapper ──
-        function headers() {
-          return {
-            Authorization: `token ${state.token}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-          };
-        }
-        async function gh(path, opts = {}) {
-          const r = await fetch(API + path, {
-            ...opts,
-            headers: { ...headers(), ...(opts.headers || {}) },
-          });
-          if (r.status === 404) return { notFound: true };
-          if (
-            r.status === 403 &&
-            r.headers.get("x-ratelimit-remaining") === "0"
-          ) {
-            const reset = r.headers.get("x-ratelimit-reset");
-            throw new Error(
-              "GitHub rate limit hit. Resets ~" +
-                (reset ? new Date(reset * 1000).toLocaleTimeString() : "soon") +
-                ".",
-            );
-          }
-          if (!r.ok) {
-            const e = await r.json().catch(() => ({}));
-            throw new Error(e.message || `HTTP ${r.status} on ${path}`);
-          }
-          if (r.status === 204) return null;
-          return r.json();
-        }
-
-        // Decode a base64 blob to { raw (binary string), text (utf-8) }
-        function decodeBlob(b64) {
-          const clean = (b64 || "").replace(/\s/g, "");
-          let raw = "";
-          try {
-            raw = atob(clean);
-          } catch (e) {
-            return { raw: "", text: "" };
-          }
-          let text = raw;
-          try {
-            text = decodeURIComponent(escape(raw));
-          } catch (e) {
-            /* keep raw */
-          }
-          return { raw, text };
-        }
-        function hasFontMagic(raw) {
-          const m4 = raw.slice(0, 4);
-          return (
-            m4 === "wOF2" ||
-            m4 === "wOFF" ||
-            m4 === "OTTO" ||
-            m4 === "true" ||
-            m4 === "ttcf" ||
-            m4 === "\x00\x01\x00\x00"
-          );
-        }
-
-        // Given a file path + its decoded content, return the list of IOC labels that fire.
-        function matchFile(path, raw, text) {
-          const hits = [];
-          for (const sig of SIGNATURES) {
-            const found = sig.str
-              ? text.indexOf(sig.str) !== -1
-              : sig.re.test(text);
-            if (found) hits.push(sig.label);
-          }
-          if (FONT_RE.test(path) && raw && !hasFontMagic(raw)) {
-            hits.push(
-              "fake font — JS payload in a .woff2/.ttf/.otf, not a real font",
-            );
-          }
-          if (PKG_RE.test(path)) {
-            for (const p of BAD_PACKAGES) {
-              if (
-                text.indexOf('"' + p + '"') !== -1 ||
-                text.indexOf(p + "@") !== -1
-              ) {
-                hits.push("malicious npm dependency: " + p);
-              }
-            }
-          }
-          return hits;
-        }
-
-        // Is this a file we should bother reading?
-        function isCandidate(path) {
-          return (
-            CONFIG_RE.test(path) ||
-            ENTRY_RE.test(path) ||
-            VSCODE_RE.test(path) ||
-            GITIGNORE_RE.test(path) ||
-            FONT_RE.test(path) ||
-            PKG_RE.test(path)
-          );
-        }
-
-        // ── Content cache: "sha:path" -> hits[] (so boundary detection is cheap) ──
-        const fileHitCache = new Map();
-
-        async function fileHitsAtRef(path, ref) {
-          const key = ref + ":" + path;
-          if (fileHitCache.has(key)) return fileHitCache.get(key);
-          let hits = [];
-          try {
-            const res = await gh(
-              `/repos/${state.owner}/${state.repo}/contents/${path
-                .split("/")
-                .map(encodeURIComponent)
-                .join("/")}?ref=${ref}`,
-            );
-            if (res && !res.notFound && res.content) {
-              const { raw, text } = decodeBlob(res.content);
-              hits = matchFile(path, raw, text);
-            }
-          } catch (e) {
-            /* treat unreadable as no-hit; boundary logic stays conservative */
-          }
-          fileHitCache.set(key, hits);
-          return hits;
-        }
-
-        // True if ANY of the given paths is infected at commit `sha`.
-        async function isInfectedAt(sha, paths) {
-          if (allZero(sha)) return false;
-          for (const p of paths) {
-            const hits = await fileHitsAtRef(p, sha);
-            if (hits.length) return true;
-          }
-          return false;
-        }
-
-        // ── SCAN one branch's HEAD tree ──
-        async function scanBranchHead(headSha) {
-          // resolve commit -> tree, then recursive tree listing
-          const commit = await gh(
-            `/repos/${state.owner}/${state.repo}/git/commits/${headSha}`,
-          );
-          if (!commit || commit.notFound)
-            return { files: [], artifacts: [], truncated: false };
-          const tree = await gh(
-            `/repos/${state.owner}/${state.repo}/git/trees/${commit.tree.sha}?recursive=1`,
-          );
-          if (!tree || tree.notFound)
-            return { files: [], artifacts: [], truncated: false };
-
-          const artifacts = [];
-          const candidates = [];
-          for (const node of tree.tree || []) {
-            if (node.type !== "blob") continue;
-            if (ARTIFACT_RE.test(node.path)) {
-              artifacts.push(node.path);
-              continue;
-            }
-            if (isCandidate(node.path)) candidates.push(node);
-          }
-
-          const files = [];
-          let scanned = 0;
-          for (const node of candidates) {
-            if (scanned >= MAX_FILES_PER_BRANCH) break;
-            scanned++;
-            try {
-              const blob = await gh(
-                `/repos/${state.owner}/${state.repo}/git/blobs/${node.sha}`,
-              );
-              if (!blob || blob.notFound) continue;
-              const { raw, text } = decodeBlob(blob.content);
-              const hits = matchFile(node.path, raw, text);
-              if (hits.length) {
-                files.push({ path: node.path, iocs: hits });
-                // seed the boundary cache for this exact (sha-of-HEAD context) path
-                fileHitCache.set(headSha + ":" + node.path, hits);
-              }
-            } catch (e) {
-              /* skip unreadable blob */
-            }
-          }
-          return {
-            files,
-            artifacts,
-            truncated:
-              !!tree.truncated || candidates.length > MAX_FILES_PER_BRANCH,
-          };
-        }
-
-        // ── Pull the server-side Activity log for a branch (timestamps NOT spoofable) ──
-        async function branchActivity(branchName) {
-          const ref = "refs/heads/" + branchName;
-          const wanted = new Set([
-            "push",
-            "force_push",
-            "branch_creation",
-            "pr_merge",
-            "merge_queue_merge",
-          ]);
-          const out = [];
-          for (let page = 1; page <= MAX_ACTIVITY_PAGES; page++) {
-            let list;
-            try {
-              list = await gh(
-                `/repos/${state.owner}/${state.repo}/activity?per_page=100&page=${page}`,
-              );
-            } catch (e) {
-              break;
-            }
-            if (!list || list.notFound || !list.length) break;
-            for (const a of list) {
-              if (a.ref === ref && wanted.has(a.activity_type)) out.push(a);
-            }
-            if (list.length < 100) break;
-          }
-          // ascending by (trustworthy) server timestamp
-          out.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-          return out;
-        }
-
-        // ── Find the correct pre-infection commit for an infected branch ──
-        // Strategy: walk the branch's push activity oldest->newest. The first push
-        // whose resulting tip is infected marks the infection. Its `before` SHA is
-        // the last clean tip — but we only accept it after CONTENT-verifying it is
-        // itself free of the IOCs. If the earliest infected push's `before` is also
-        // infected (infection predates the activity window), we return unverified.
-        async function findCleanTarget(branchName, headSha, infectedPaths) {
-          const acts = await branchActivity(branchName);
-          if (!acts.length) {
-            return {
-              sha: null,
-              verified: false,
-              reason:
-                "no push activity available (token lacks access, or activity older than the retention window)",
-            };
-          }
-          for (const ev of acts) {
-            const afterInfected = await isInfectedAt(ev.after, infectedPaths);
-            if (!afterInfected) continue; // still clean at this point
-            // First infected state found. Its predecessor is the restore candidate.
-            if (allZero(ev.before)) {
-              return {
-                sha: null,
-                verified: false,
-                reason:
-                  "branch was created already infected (no clean predecessor exists on this branch)",
-                via: ev,
-              };
-            }
-            const beforeInfected = await isInfectedAt(ev.before, infectedPaths);
-            if (beforeInfected) {
-              return {
-                sha: null,
-                verified: false,
-                reason:
-                  "infection predates the visible activity window — earliest known predecessor is also infected",
-                via: ev,
-              };
-            }
-            return { sha: ev.before, verified: true, via: ev };
-          }
-          // Every tip in the window is clean but HEAD is infected: infection happened
-          // between the last recorded activity and now, or via an untracked path.
-          const lastClean = [...acts]
-            .reverse()
-            .find((ev) => ev.after && !allZero(ev.after));
-          return {
-            sha: lastClean ? lastClean.after : null,
-            verified: false,
-            reason:
-              "HEAD is infected but no clean→infected transition was found in the activity window; the suggested SHA is the newest recorded tip and must be verified manually",
-          };
-        }
-
         // ── MAIN SCAN ──
         async function runScan() {
           state.token = tokenInput.value.trim();
@@ -1620,7 +1266,7 @@
           fetchBtn.disabled = true;
           fetchSpinner.style.display = "block";
           fetchLabel.textContent = "Scanning…";
-          fileHitCache.clear();
+          client = PolinRider.createClient(state.token);
           state.findings = [];
           state.branchesScanned = 0;
           state.selectedBranch = "all";
@@ -1628,15 +1274,10 @@
           try {
             setStatus("loading", "Listing branches…");
             // Paginate all branches
-            const branches = [];
-            for (let page = 1; page <= 20; page++) {
-              const list = await gh(
-                `/repos/${state.owner}/${state.repo}/branches?per_page=100&page=${page}`,
-              );
-              if (!list || list.notFound || !list.length) break;
-              branches.push(...list);
-              if (list.length < 100) break;
-            }
+            const branches = await client.listBranches(
+              state.owner,
+              state.repo,
+            );
             if (!branches.length)
               throw new Error(
                 "No branches found (check owner/repo and token scope).",
@@ -1651,14 +1292,19 @@
               );
               try {
                 const head = b.commit.sha;
-                const { files, artifacts, truncated } = await scanBranchHead(
-                  head,
-                );
+                const { files, artifacts, truncated } =
+                  await client.scanBranch(state.owner, state.repo, head);
                 if (!files.length && !artifacts.length) continue; // clean branch — skip
 
                 const infectedPaths = files.map((f) => f.path);
                 const target = infectedPaths.length
-                  ? await findCleanTarget(b.name, head, infectedPaths)
+                  ? await client.findCleanTarget(
+                      state.owner,
+                      state.repo,
+                      b.name,
+                      head,
+                      infectedPaths,
+                    )
                   : {
                       sha: null,
                       verified: false,
@@ -2062,57 +1708,25 @@
           const key = `${branch}:${sha}`;
           if (state.restoredBranches[key])
             return { ok: false, skipped: true, msg: "already restored" };
-          try {
-            // Safety re-verification: never restore to a SHA that is (still) infected.
-            const finding = state.findings.find((f) => f.branch === branch);
-            const paths = finding ? finding.files.map((f) => f.path) : [];
-            if (paths.length) {
-              const stillInfected = await isInfectedAt(sha, paths);
-              if (stillInfected)
-                return {
-                  ok: false,
-                  msg: "target SHA re-checked as INFECTED — refused",
-                };
-            }
-
-            const r = await fetch(
-              `${API}/repos/${state.owner}/${
-                state.repo
-              }/git/refs/heads/${encodeURIComponent(branch)}`,
-              {
-                method: "PATCH",
-                headers: { ...headers(), "Content-Type": "application/json" },
-                body: JSON.stringify({ sha, force: true }),
-              },
-            );
-            if (!r.ok) {
-              const err = await r.json().catch(() => ({}));
-              return { ok: false, msg: err.message || `HTTP ${r.status}` };
-            }
-
-            // Post-restore verification: confirm the new tip is clean.
-            let verifyMsg = "";
-            if (paths.length) {
-              for (const [k] of fileHitCache)
-                if (k.startsWith(sha + ":")) fileHitCache.delete(k);
-              const tipInfected = await isInfectedAt(sha, paths);
-              verifyMsg = tipInfected
-                ? " (⚠ tip still flags IOCs — investigate!)"
-                : " (tip verified clean)";
-            }
-
+          if (!client) client = PolinRider.createClient(state.token);
+          const finding = state.findings.find((f) => f.branch === branch);
+          const paths = finding ? finding.files.map((f) => f.path) : [];
+          // Engine handles: pre-restore re-verify, force PATCH, post-restore tip check.
+          const res = await client.restore(
+            state.owner,
+            state.repo,
+            branch,
+            sha,
+            paths,
+          );
+          if (res.ok) {
             state.restoredBranches[key] = {
               branch,
               sha,
               at: new Date().toISOString(),
             };
-            return {
-              ok: true,
-              msg: `restored to ${shortSha(sha)}${verifyMsg}`,
-            };
-          } catch (err) {
-            return { ok: false, msg: err.message };
           }
+          return res;
         }
 
         modalConfirmBtn.addEventListener("click", async () => {
