@@ -1009,6 +1009,14 @@
               <strong id="total-count">0</strong> branches scanned
             </div>
             <div style="display: flex; gap: 8px; align-items: center">
+              <button
+                class="btn btn-danger"
+                id="restore-all-btn"
+                style="width: auto; display: none; padding: 5px 12px; font-size: 12px"
+                title="Force-restore every infected branch that has a verified-clean target"
+              >
+                ⏪ Restore all (<span id="restore-all-count">0</span>)
+              </button>
               <input
                 type="text"
                 id="search-box"
@@ -1249,6 +1257,8 @@
         const visibleCount = $("visible-count");
         const totalCount = $("total-count");
         const searchBox = $("search-box");
+        const restoreAllBtn = $("restore-all-btn");
+        const restoreAllCount = $("restore-all-count");
 
         const restoreModal = $("restore-modal");
         const modalBranch = $("modal-branch");
@@ -1260,6 +1270,7 @@
         const restoreLabel = $("restore-label");
 
         let pendingRestore = null;
+        let bulkItems = null; // set when the "Restore all" confirmation is open
 
         // ── TOKEN TOGGLE ──
         $("token-eye-btn").addEventListener("click", () => {
@@ -1712,6 +1723,26 @@
           eventsPanel.style.display = "block";
           renderSidebar();
           renderFindings();
+          updateRestoreAll();
+        }
+
+        // Branches that CAN be bulk-restored: a verified-clean target that
+        // hasn't already been restored this session. Unverified / manual-review
+        // branches are deliberately excluded — they must be handled by hand.
+        function eligibleForBulk() {
+          return state.findings.filter(
+            (f) =>
+              f.target &&
+              f.target.sha &&
+              f.target.verified &&
+              !state.restoredBranches[`${f.branch}:${f.target.sha}`],
+          );
+        }
+
+        function updateRestoreAll() {
+          const n = eligibleForBulk().length;
+          restoreAllCount.textContent = n;
+          restoreAllBtn.style.display = n > 0 ? "flex" : "none";
         }
 
         function renderSidebar() {
@@ -2002,6 +2033,7 @@
             return;
           }
           pendingRestore = { branch, sha };
+          bulkItems = null;
           modalBranch.textContent = branch;
           modalSha.textContent = sha;
           modalConfirmInput.value = "";
@@ -2013,40 +2045,34 @@
 
         modalConfirmInput.addEventListener("input", () => {
           modalConfirmBtn.disabled =
-            modalConfirmInput.value.trim() !== "RESTORE";
+            modalConfirmInput.value.trim() !== modalConfirmWord.textContent;
         });
-        $("modal-close").addEventListener("click", () =>
-          restoreModal.classList.remove("open"),
-        );
-        $("modal-cancel").addEventListener("click", () =>
-          restoreModal.classList.remove("open"),
-        );
+        function closeModal() {
+          restoreModal.classList.remove("open");
+          bulkItems = null;
+          pendingRestore = null;
+          modalConfirmWord.textContent = "RESTORE";
+        }
+        $("modal-close").addEventListener("click", closeModal);
+        $("modal-cancel").addEventListener("click", closeModal);
 
-        modalConfirmBtn.addEventListener("click", async () => {
-          if (!pendingRestore) return;
-          const { branch, sha } = pendingRestore;
+        // Core restore for ONE branch. Returns { ok, skipped, msg }. Never throws.
+        // Used by both the single-branch flow and the "Restore all" flow.
+        async function performRestore(branch, sha) {
           const key = `${branch}:${sha}`;
-          if (state.restoredBranches[key]) {
-            restoreModal.classList.remove("open");
-            toast(`Already restored "${branch}" — blocked.`, "error");
-            return;
-          }
-
-          modalConfirmBtn.disabled = true;
-          restoreSpinner.style.display = "block";
-          restoreLabel.textContent = "Restoring…";
-
+          if (state.restoredBranches[key])
+            return { ok: false, skipped: true, msg: "already restored" };
           try {
             // Safety re-verification: never restore to a SHA that is (still) infected.
             const finding = state.findings.find((f) => f.branch === branch);
             const paths = finding ? finding.files.map((f) => f.path) : [];
             if (paths.length) {
               const stillInfected = await isInfectedAt(sha, paths);
-              if (stillInfected) {
-                throw new Error(
-                  "Aborted: target SHA re-checked as INFECTED. Refusing to restore.",
-                );
-              }
+              if (stillInfected)
+                return {
+                  ok: false,
+                  msg: "target SHA re-checked as INFECTED — refused",
+                };
             }
 
             const r = await fetch(
@@ -2061,7 +2087,7 @@
             );
             if (!r.ok) {
               const err = await r.json().catch(() => ({}));
-              throw new Error(err.message || `HTTP ${r.status}`);
+              return { ok: false, msg: err.message || `HTTP ${r.status}` };
             }
 
             // Post-restore verification: confirm the new tip is clean.
@@ -2080,24 +2106,101 @@
               sha,
               at: new Date().toISOString(),
             };
-            restoreModal.classList.remove("open");
-            toast(
-              `Branch "${branch}" restored to ${shortSha(sha)}${verifyMsg}`,
-              "success",
-            );
-            setStatus("ok", `Restored ${branch} → ${shortSha(sha)}`);
-            render();
+            return {
+              ok: true,
+              msg: `restored to ${shortSha(sha)}${verifyMsg}`,
+            };
           } catch (err) {
-            toast("Restore failed: " + err.message, "error");
-          } finally {
-            restoreSpinner.style.display = "none";
-            restoreLabel.textContent = "Restore Branch";
-            modalConfirmBtn.disabled = false;
+            return { ok: false, msg: err.message };
           }
+        }
+
+        modalConfirmBtn.addEventListener("click", async () => {
+          if (bulkItems) return runBulkRestore();
+          if (!pendingRestore) return;
+          const { branch, sha } = pendingRestore;
+
+          modalConfirmBtn.disabled = true;
+          restoreSpinner.style.display = "block";
+          restoreLabel.textContent = "Restoring…";
+
+          const res = await performRestore(branch, sha);
+          if (res.ok) {
+            restoreModal.classList.remove("open");
+            toast(`Branch "${branch}" ${res.msg}`, "success");
+            setStatus("ok", `Restored ${branch} → ${shortSha(sha)}`);
+          } else {
+            toast(`Restore failed: ${res.msg}`, "error");
+          }
+          render();
+          restoreSpinner.style.display = "none";
+          restoreLabel.textContent = "Restore Branch";
+          modalConfirmBtn.disabled = false;
         });
+
+        // ── RESTORE ALL (bulk) ──
+        window._restoreAll = function () {
+          const eligible = eligibleForBulk();
+          if (!eligible.length) {
+            toast("No verified-clean branches to restore.", "info");
+            return;
+          }
+          bulkItems = eligible.map((f) => ({
+            branch: f.branch,
+            sha: f.target.sha,
+          }));
+          pendingRestore = null;
+          modalBranch.textContent = `${bulkItems.length} infected branch${
+            bulkItems.length !== 1 ? "es" : ""
+          }`;
+          modalSha.textContent =
+            "each restored to its own verified-clean SHA (unverified branches are skipped)";
+          modalConfirmWord.textContent = "RESTORE ALL";
+          modalConfirmInput.value = "";
+          modalConfirmBtn.disabled = true;
+          restoreModal.classList.add("open");
+          setTimeout(() => modalConfirmInput.focus(), 100);
+        };
+
+        async function runBulkRestore() {
+          const items = bulkItems.slice();
+          bulkItems = null;
+          restoreModal.classList.remove("open");
+          restoreSpinner.style.display = "block";
+
+          let done = 0,
+            fail = 0,
+            skip = 0;
+          for (let i = 0; i < items.length; i++) {
+            const it = items[i];
+            setStatus(
+              "loading",
+              `Restoring ${i + 1}/${items.length}: ${it.branch}`,
+            );
+            const res = await performRestore(it.branch, it.sha);
+            if (res.ok) done++;
+            else if (res.skipped) skip++;
+            else {
+              fail++;
+              toast(`"${it.branch}": ${res.msg}`, "error");
+            }
+            render(); // reflect progress live
+          }
+
+          restoreSpinner.style.display = "none";
+          restoreLabel.textContent = "Restore Branch";
+          modalConfirmBtn.disabled = false;
+          modalConfirmWord.textContent = "RESTORE";
+          const summary = `Bulk restore: ${done} restored${
+            fail ? `, ${fail} failed` : ""
+          }${skip ? `, ${skip} skipped` : ""}`;
+          setStatus(fail ? "err" : "ok", summary);
+          toast(summary, fail ? "error" : "success");
+        }
 
         // ── WIRING ──
         fetchBtn.addEventListener("click", runScan);
+        restoreAllBtn.addEventListener("click", () => window._restoreAll());
         searchBox.addEventListener("input", renderFindings);
         [tokenInput, ownerInput, repoInput].forEach((el) =>
           el.addEventListener("keydown", (e) => {
